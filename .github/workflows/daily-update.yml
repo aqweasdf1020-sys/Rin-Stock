@@ -1,0 +1,63 @@
+name: 每日股票數據更新 + 部署
+
+on:
+  schedule:
+    # 台灣時間 14:30（UTC+8），所以 UTC 06:30
+    - cron: '30 6 * * 1-5'
+  workflow_dispatch:  # 允許手動觸發
+    inputs:
+      full_fetch:
+        description: '完整季度抓取（含FinMind財務資料）'
+        type: boolean
+        default: false
+
+jobs:
+  fetch-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: 抓取 TWSE 每日數據
+        env:
+          FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
+          FULL_FETCH: ${{ github.event.inputs.full_fetch || 'false' }}
+        run: |
+          python scripts/fetcher.py \
+            --token "$FINMIND_TOKEN" \
+            $([ "$FULL_FETCH" = "true" ] && echo "--full" || echo "")
+
+      - name: 確認輸出檔案
+        run: |
+          echo "=== stock_data.js 大小 ==="
+          wc -c data/stock_data.js
+          echo "=== 前 200 字元 ==="
+          head -c 200 data/stock_data.js
+
+      - name: Commit 數據更新
+        run: |
+          git config user.name  "GitHub Actions Bot"
+          git config user.email "actions@github.com"
+          git add data/stock_data.js data/fetch_log.txt
+          git diff --cached --quiet || \
+            git commit -m "📊 $(date '+%Y-%m-%d %H:%M') 自動更新股市數據"
+          git push
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./
+          exclude_assets: '.github,scripts,README.md'
