@@ -1,0 +1,1075 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>台股估值系統</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="data/stock_data.js" onerror="window.STOCK_DB=null"></script>
+<style>
+  :root{
+    --bg:#f5efe6;--surface:#fdf8f2;--surface2:#ede4d8;
+    --border:#d9c9b4;--accent:#7a4f2e;--accent2:#a06a3a;
+    --text:#3b2a1a;--text2:#7a5c42;--text3:#b09878;
+    --green:#4a7a4a;--red:#b84040;--warn:#b07020;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:var(--bg);color:var(--text);font-family:'Noto Sans TC',system-ui,sans-serif;min-height:100vh}
+  body::before{content:'';position:fixed;inset:0;
+    background-image:linear-gradient(rgba(122,79,46,.05) 1px,transparent 1px),
+                     linear-gradient(90deg,rgba(122,79,46,.05) 1px,transparent 1px);
+    background-size:40px 40px;pointer-events:none;z-index:0}
+  .z1{position:relative;z-index:1}
+
+  /* nav */
+  header{background:rgba(253,248,242,.97);border-bottom:1px solid var(--border);
+    position:sticky;top:0;z-index:50;backdrop-filter:blur(12px);
+    box-shadow:0 2px 12px rgba(122,79,46,.08)}
+  .nav-inner{max-width:1400px;margin:0 auto;padding:0 20px;display:flex;align-items:center;gap:12px;height:54px;flex-wrap:wrap}
+  .logo{font-size:20px;font-weight:800;color:var(--accent);letter-spacing:-1px;white-space:nowrap}
+  .tabs{display:flex;gap:2px;background:var(--surface2);padding:3px;border-radius:9px;border:1px solid var(--border);flex-wrap:wrap}
+  .tab{padding:6px 14px;border-radius:7px;border:none;background:transparent;
+    color:var(--text2);font-size:12px;cursor:pointer;transition:all .2s;white-space:nowrap}
+  .tab.on{background:linear-gradient(135deg,rgba(122,79,46,.18),rgba(160,106,58,.12));
+    color:var(--accent);border:1px solid rgba(122,79,46,.4)}
+
+  /* search bar */
+  .search-bar{background:var(--surface2);border-bottom:1px solid var(--border);padding:10px 0}
+  .search-inner{max-width:1400px;margin:0 auto;padding:0 20px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .srch-wrap{position:relative;flex:1;min-width:200px;max-width:320px}
+  .srch-wrap input{width:100%;background:var(--surface);border:1px solid var(--border);border-radius:8px;
+    padding:8px 34px 8px 12px;font-size:13px;color:var(--text);outline:none;transition:.2s}
+  .srch-wrap input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(122,79,46,.1)}
+  .srch-ico{position:absolute;right:10px;top:50%;transform:translateY(-50%);color:var(--text3);pointer-events:none}
+  .suggest{position:absolute;top:calc(100% + 4px);left:0;right:0;background:var(--surface);
+    border:1px solid var(--border);border-radius:8px;z-index:100;max-height:220px;
+    overflow-y:auto;display:none;box-shadow:0 6px 20px rgba(122,79,46,.12)}
+  .sug-item{padding:9px 14px;font-size:13px;cursor:pointer;display:flex;justify-content:space-between;
+    border-bottom:1px solid rgba(0,0,0,.04)}
+  .sug-item:hover{background:rgba(122,79,46,.08);color:var(--accent)}
+  .sug-code{font-family:'Space Mono',monospace;font-size:11px;color:var(--text3)}
+  .load-btn{padding:8px 18px;border-radius:8px;border:none;font-weight:700;font-size:12px;
+    cursor:pointer;background:linear-gradient(135deg,var(--accent),var(--accent2));
+    color:#fff;letter-spacing:1px;transition:all .2s;white-space:nowrap}
+  .load-btn:hover{transform:translateY(-1px);box-shadow:0 6px 16px rgba(122,79,46,.28)}
+  .db-status{font-size:11px;font-family:'Space Mono',monospace;display:flex;align-items:center;gap:6px}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--text3)}
+  .dot.ok{background:var(--green)}.dot.err{background:var(--red)}
+  .dot.loading{background:var(--warn);animation:blink .7s infinite}
+  @keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
+  .ticker-row{margin-top:8px;display:none}
+  .ticker-strip{display:flex;gap:10px;flex-wrap:wrap}
+  .t-chip{background:var(--surface);border:1px solid var(--border);border-radius:8px;
+    padding:7px 14px;display:flex;flex-direction:column;gap:2px;
+    box-shadow:0 1px 4px rgba(122,79,46,.06)}
+  .t-label{font-size:9px;color:var(--text3);font-family:'Space Mono',monospace;text-transform:uppercase}
+  .t-val{font-family:'Space Mono',monospace;font-size:14px;font-weight:700}
+  .fill-ok{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;
+    background:rgba(74,122,74,.1);border:1px solid rgba(74,122,74,.3);
+    border-radius:8px;font-size:12px;color:var(--green);margin-top:6px}
+  .db-hint{font-size:11px;color:var(--text3);margin-top:5px}
+
+  /* pages */
+  main{max-width:1400px;margin:0 auto;padding:24px 20px}
+  .page{display:none}.page.on{display:block}
+  .page-title{font-size:24px;font-weight:800;color:var(--accent);margin-bottom:4px}
+  .page-sub{font-size:12px;color:var(--text3);font-family:'Space Mono',monospace;margin-bottom:24px}
+
+  /* cards */
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;
+    padding:20px;margin-bottom:18px;position:relative;overflow:hidden;
+    box-shadow:0 2px 12px rgba(122,79,46,.06)}
+  .card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;
+    background:linear-gradient(90deg,var(--accent),var(--accent2));opacity:.6}
+  .card-title{font-size:11px;font-weight:700;color:var(--accent);margin-bottom:8px;
+    font-family:'Space Mono',monospace;text-transform:uppercase;letter-spacing:1px}
+
+  /* grid */
+  .g2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  .g3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  .g4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+  .two-col{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media(max-width:900px){.g2,.g3,.g4,.two-col{grid-template-columns:1fr}}
+
+  /* inputs */
+  .inp-grp{margin-bottom:13px}
+  .inp-label{display:block;font-size:11px;color:var(--text2);margin-bottom:5px;
+    font-family:'Space Mono',monospace;text-transform:uppercase;letter-spacing:1px}
+  .inp-hint{font-size:10px;color:var(--text3);margin-top:3px}
+  input[type=number],input[type=text],select{
+    width:100%;background:var(--surface);border:1px solid var(--border);border-radius:8px;
+    padding:8px 12px;color:var(--text);font-family:'Space Mono',monospace;font-size:13px;
+    outline:none;transition:.2s}
+  input:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(122,79,46,.12)}
+  select option{background:var(--surface)}
+
+  /* buttons */
+  .btn{padding:10px 22px;border-radius:8px;border:none;font-family:'Space Mono',monospace;
+    font-size:12px;font-weight:700;cursor:pointer;transition:all .2s;letter-spacing:1px;text-transform:uppercase}
+  .btn-p{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff}
+  .btn-p:hover{transform:translateY(-1px);box-shadow:0 6px 18px rgba(122,79,46,.28)}
+  .btn-s{background:var(--surface);color:var(--text);border:1px solid var(--border)}
+  .btn-s:hover{border-color:var(--accent);color:var(--accent)}
+
+  /* results */
+  .rbox{background:var(--surface2);border:1px solid var(--border);border-radius:10px;
+    padding:16px;margin-top:16px}
+  .rrow{display:flex;justify-content:space-between;align-items:center;
+    padding:8px 0;border-bottom:1px solid rgba(0,0,0,.04)}
+  .rrow:last-child{border-bottom:none}
+  .rlabel{color:var(--text2);font-size:13px}
+  .rval{font-family:'Space Mono',monospace;font-size:13px;font-weight:700}
+  .vg{color:var(--green)}.vr{color:var(--red)}.vw{color:var(--warn)}.va{color:var(--accent)}
+  .big-r{text-align:center;padding:20px;background:var(--surface2);border-radius:12px;
+    border:2px solid var(--border);margin-top:16px}
+  .big-label{font-size:10px;color:var(--text3);font-family:'Space Mono',monospace;
+    text-transform:uppercase;letter-spacing:2px;margin-bottom:7px}
+  .big-val{font-family:'Space Mono',monospace;font-size:36px;font-weight:700;line-height:1}
+  .big-sub{font-size:12px;color:var(--text2);margin-top:7px}
+
+  /* badge */
+  .badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;
+    font-size:11px;font-weight:700;font-family:'Space Mono',monospace}
+  .bb{background:rgba(74,122,74,.15);color:var(--green);border:1px solid rgba(74,122,74,.3)}
+  .bs{background:rgba(184,64,64,.12);color:var(--red);border:1px solid rgba(184,64,64,.3)}
+  .bh{background:rgba(176,112,32,.12);color:var(--warn);border:1px solid rgba(176,112,32,.3)}
+
+  /* formula */
+  .fbox{background:var(--surface2);border:1px solid var(--border);border-left:3px solid var(--accent);
+    border-radius:0 8px 8px 0;padding:11px 15px;margin:10px 0;
+    font-family:'Space Mono',monospace;font-size:12px;color:var(--accent2);line-height:1.9}
+  .fnote{color:var(--text3);font-size:11px;margin-top:5px;line-height:1.6}
+
+  /* sub-tabs */
+  .stabs{display:flex;border-bottom:1px solid var(--border);margin-bottom:22px;flex-wrap:wrap}
+  .stab{padding:8px 16px;border:none;background:transparent;color:var(--text3);
+    font-size:13px;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;transition:.2s}
+  .stab.on{color:var(--accent);border-bottom-color:var(--accent)}
+  .spage{display:none}.spage.on{display:block}
+
+  /* score meter */
+  .smeter{display:flex;gap:3px;margin-top:7px}
+  .sblock{flex:1;height:6px;border-radius:2px;background:var(--surface2);transition:background .3s}
+  .sg{background:var(--green)}.sw{background:var(--warn)}.sr{background:var(--red)}
+
+  /* chart */
+  .chart-wrap{height:320px;position:relative}
+  .chart-info{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:10px;font-family:'Space Mono',monospace;font-size:12px}
+  .ci{display:flex;flex-direction:column;gap:1px}
+  .ci-l{font-size:9px;color:var(--text3);text-transform:uppercase}
+
+  /* top10 */
+  .top10-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  @media(max-width:700px){.top10-grid{grid-template-columns:1fr}}
+  .sc{background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:13px;
+    cursor:pointer;transition:all .2s}
+  .sc:hover{border-color:var(--accent);box-shadow:0 4px 14px rgba(122,79,46,.12)}
+  .sbar-bg{height:5px;background:var(--surface2);border-radius:3px;overflow:hidden;margin:7px 0}
+  .sbar{height:100%;border-radius:3px;background:linear-gradient(90deg,var(--accent),var(--accent2))}
+  .sig{padding:2px 7px;border-radius:10px;font-size:10px;font-family:'Space Mono',monospace}
+  .sig-b{background:rgba(74,122,74,.15);color:var(--green);border:1px solid rgba(74,122,74,.3)}
+  .sig-c{background:rgba(184,64,64,.12);color:var(--red);border:1px solid rgba(184,64,64,.3)}
+  .sig-w{background:rgba(176,112,32,.12);color:var(--warn);border:1px solid rgba(176,112,32,.3)}
+  .ptbox{background:var(--surface2);border-radius:8px;padding:10px;margin-top:7px}
+
+  /* altman */
+  .zbox{text-align:center;padding:20px}
+  .zscore{font-size:48px;font-weight:800;font-family:'Space Mono',monospace}
+
+  /* scrollbar */
+  ::-webkit-scrollbar{width:5px}
+  ::-webkit-scrollbar-track{background:var(--surface2)}
+  ::-webkit-scrollbar-thumb{background:var(--accent2);border-radius:3px}
+
+  hr.div{border:none;border-top:1px solid var(--border);margin:18px 0}
+</style>
+</head>
+<body>
+
+<header class="z1">
+  <div class="nav-inner">
+    <div class="logo">Σ 台股估值</div>
+    <div class="tabs" id="main-tabs">
+      <button class="tab" onclick="goPage('dash',this)">📊 市場總覽</button>
+      <button class="tab on" onclick="goPage('dcf',this)">DCF</button>
+      <button class="tab" onclick="goPage('rel',this)">相對估值</button>
+      <button class="tab" onclick="goPage('score',this)">財務評分</button>
+      <button class="tab" onclick="goPage('screener',this)">選股</button>
+      <button class="tab" onclick="goPage('altman',this)">Altman Z</button>
+      <button class="tab" onclick="goPage('formula',this)">公式手冊</button>
+    </div>
+  </div>
+</header>
+
+<!-- Search Bar -->
+<div class="search-bar z1">
+  <div style="max-width:1400px;margin:0 auto;padding:0 20px">
+    <div class="search-inner">
+      <div class="srch-wrap">
+        <input id="sq" type="text" placeholder="代碼或名稱，例如 2330" autocomplete="off"
+          oninput="onSrchInput(this.value)" onkeydown="if(event.key==='Enter')loadStock()">
+        <span class="srch-ico">🔍</span>
+        <div class="suggest" id="sbox"></div>
+      </div>
+      <button class="load-btn" onclick="loadStock()">載入數據</button>
+      <div class="db-status">
+        <span class="dot loading" id="db-dot"></span>
+        <span id="db-msg" style="color:var(--warn)">載入資料庫...</span>
+      </div>
+    </div>
+    <div class="ticker-row" id="ticker-row">
+      <div class="ticker-strip" id="ticker-strip"></div>
+      <div id="fill-msg"></div>
+      <div class="db-hint" id="db-hint"></div>
+    </div>
+  </div>
+</div>
+
+<main class="z1">
+
+<!-- ======== DASHBOARD ======== -->
+<div id="p-dash" class="page">
+  <div class="page-title">市場總覽</div>
+  <div class="page-sub">// 大盤走勢 · 個股K線 · 今日推薦前10檔</div>
+  <div class="two-col">
+    <div>
+      <div class="card">
+        <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+          📈 大盤加權指數（近60日）
+          <button class="btn-s btn" style="padding:5px 12px;font-size:10px" onclick="loadTaiex()">刷新</button>
+        </div>
+        <div class="chart-info">
+          <div class="ci"><span class="ci-l">指數</span><span id="ti-c" style="font-size:18px;font-weight:700">—</span></div>
+          <div class="ci"><span class="ci-l">漲跌</span><span id="ti-chg">—</span></div>
+          <div class="ci"><span class="ci-l">漲跌幅</span><span id="ti-pct">—</span></div>
+        </div>
+        <div class="chart-wrap"><canvas id="taiex-c"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title">🕯️ 個股K線（近60日）</div>
+        <div style="display:flex;gap:8px;margin-bottom:12px">
+          <input id="kl-code" type="text" placeholder="代碼，例如 2330" style="flex:1;max-width:180px"
+            onkeydown="if(event.key==='Enter')loadKline()">
+          <button class="btn-s btn" style="padding:7px 14px;font-size:11px" onclick="loadKline()">查詢</button>
+          <span id="kl-name" style="font-size:12px;color:var(--text2);align-self:center"></span>
+        </div>
+        <div class="chart-info">
+          <div class="ci"><span class="ci-l">收盤</span><span id="ki-c">—</span></div>
+          <div class="ci"><span class="ci-l">MA5</span><span id="ki-ma5">—</span></div>
+          <div class="ci"><span class="ci-l">MA20</span><span id="ki-ma20">—</span></div>
+          <div class="ci"><span class="ci-l">量(張)</span><span id="ki-vol">—</span></div>
+        </div>
+        <div class="chart-wrap"><canvas id="kline-c"></canvas></div>
+      </div>
+    </div>
+    <div>
+      <div class="card">
+        <div class="card-title" style="display:flex;justify-content:space-between">
+          🏆 今日推薦前10檔
+          <button class="btn-s btn" style="padding:5px 12px;font-size:10px" onclick="calcTop10()">計算</button>
+        </div>
+        <p style="font-size:11px;color:var(--text3);margin-bottom:12px;line-height:1.6">
+          估值35% + 獲利35% + 財務安全20% + 成長10%<br>點擊個股可載入估值數據
+        </p>
+        <div id="top10-list"><p style="text-align:center;padding:40px;color:var(--text3);font-size:13px">點擊「計算」載入推薦</p></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ======== DCF ======== -->
+<div id="p-dcf" class="page on">
+  <div class="page-title">DCF 自由現金流折現</div>
+  <div class="page-sub">// 三階段 DCF + 敏感性矩陣 + 安全邊際</div>
+  <div class="two-col">
+    <div>
+      <div class="card">
+        <div class="card-title">基本輸入</div>
+        <div class="g2">
+          <div class="inp-grp"><label class="inp-label">目前股價（元）</label><input type="number" id="dcf-price"></div>
+          <div class="inp-grp"><label class="inp-label">流通股數（百萬股）</label><input type="number" id="dcf-shares"></div>
+          <div class="inp-grp"><label class="inp-label">自由現金流 FCF（億元）</label><input type="number" id="dcf-fcf"><div class="inp-hint">營業現金流－資本支出</div></div>
+          <div class="inp-grp"><label class="inp-label">淨負債（億元）</label><input type="number" id="dcf-debt"><div class="inp-hint">負值＝淨現金</div></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">成長假設（三階段）</div>
+        <div class="g2">
+          <div class="inp-grp"><label class="inp-label">高成長期（年）</label><input type="number" id="dcf-n1"></div>
+          <div class="inp-grp"><label class="inp-label">高成長率（%）</label><input type="number" id="dcf-g1"></div>
+          <div class="inp-grp"><label class="inp-label">過渡期（年）</label><input type="number" id="dcf-n2"></div>
+          <div class="inp-grp"><label class="inp-label">過渡成長率（%）</label><input type="number" id="dcf-g2"></div>
+          <div class="inp-grp"><label class="inp-label">永續成長率 g（%）</label><input type="number" id="dcf-gT"><div class="inp-hint">建議 2–4%（GDP增速）</div></div>
+          <div class="inp-grp"><label class="inp-label">折現率 WACC（%）</label><input type="number" id="dcf-wacc"><div class="inp-hint">一般 8–12%</div></div>
+        </div>
+        <button class="btn btn-p" onclick="calcDCF()" style="width:100%;margin-top:6px">▶ 計算內在價值</button>
+      </div>
+      <div class="card">
+        <div class="card-title">公式說明</div>
+        <div class="fbox">IV = Σ FCFₙ/(1+r)ⁿ + TV/(1+r)ᴺ<br>TV = FCF_N×(1+g)/(r−g)<br>MoS = (IV−P)/IV×100%</div>
+        <div class="fnote">安全邊際 MoS ≥ 25% 才考慮買入（巴菲特原則）</div>
+      </div>
+    </div>
+    <div>
+      <div class="card">
+        <div class="card-title">估值結果</div>
+        <div id="dcf-ph" style="text-align:center;padding:60px;color:var(--text3);font-size:13px">輸入數據後點擊計算</div>
+        <div id="dcf-out" style="display:none">
+          <div class="big-r">
+            <div class="big-label">DCF 合理股價</div>
+            <div class="big-val" id="dcf-fv">—</div>
+            <div class="big-sub" id="dcf-vd">—</div>
+          </div>
+          <div class="rbox">
+            <div class="rrow"><span class="rlabel">第一階段現值</span><span class="rval va" id="dcf-pv1">—</span></div>
+            <div class="rrow"><span class="rlabel">第二階段現值</span><span class="rval va" id="dcf-pv2">—</span></div>
+            <div class="rrow"><span class="rlabel">終值現值 TV</span><span class="rval va" id="dcf-pvt">—</span></div>
+            <div class="rrow"><span class="rlabel">企業總價值 EV</span><span class="rval" id="dcf-ev">—</span></div>
+            <div class="rrow"><span class="rlabel">安全邊際 MoS</span><span class="rval" id="dcf-mos">—</span></div>
+          </div>
+          <div style="margin-top:16px"><div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:10px">敏感性矩陣（WACC vs g）</div>
+          <div style="overflow-x:auto"><table id="dcf-sens" style="width:100%;border-collapse:collapse;font-size:11px;font-family:'Space Mono',monospace"></table></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ======== 相對估值 ======== -->
+<div id="p-rel" class="page">
+  <div class="page-title">相對估值模型</div>
+  <div class="page-sub">// P/E · P/B · EV/EBITDA · PEG · DDM · CAPM</div>
+  <div class="stabs" id="rel-tabs">
+    <button class="stab on" onclick="goSub('rel','rpe',this)">P/E</button>
+    <button class="stab" onclick="goSub('rel','rpb',this)">P/B</button>
+    <button class="stab" onclick="goSub('rel','rev',this)">EV/EBITDA</button>
+    <button class="stab" onclick="goSub('rel','rpeg',this)">PEG</button>
+    <button class="stab" onclick="goSub('rel','rddm',this)">DDM</button>
+  </div>
+  <!-- P/E -->
+  <div id="p-rpe" class="spage on">
+    <div class="two-col">
+      <div class="card"><div class="card-title">本益比估值</div>
+        <div class="g2">
+          <div class="inp-grp"><label class="inp-label">EPS（元）</label><input type="number" id="pe-eps"></div>
+          <div class="inp-grp"><label class="inp-label">目前股價（元）</label><input type="number" id="pe-price"></div>
+          <div class="inp-grp"><label class="inp-label">EPS預期成長率（%）</label><input type="number" id="pe-g"></div>
+          <div class="inp-grp"><label class="inp-label">無風險利率（%）</label><input type="number" id="pe-rf"></div>
+          <div class="inp-grp"><label class="inp-label">同業平均 P/E</label><input type="number" id="pe-ind"></div>
+          <div class="inp-grp"><label class="inp-label">歷史平均 P/E</label><input type="number" id="pe-hist"></div>
+        </div>
+        <button class="btn btn-p" onclick="calcPE()" style="width:100%">計算</button>
+      </div>
+      <div class="card"><div class="card-title">結果</div>
+        <div class="rbox">
+          <div class="rrow"><span class="rlabel">目前 P/E</span><span class="rval" id="pe-curr">—</span></div>
+          <div class="rrow"><span class="rlabel">同業估值</span><span class="rval va" id="pe-iv">—</span></div>
+          <div class="rrow"><span class="rlabel">歷史估值</span><span class="rval va" id="pe-hv">—</span></div>
+          <div class="rrow"><span class="rlabel">葛拉漢公式</span><span class="rval va" id="pe-gv">—</span></div>
+          <div class="rrow"><span class="rlabel">均值合理股價</span><span class="rval" id="pe-avg">—</span></div>
+          <div class="rrow"><span class="rlabel">評估</span><span id="pe-badge">—</span></div>
+        </div>
+        <div class="fbox" style="margin-top:14px">葛拉漢 = EPS×(8.5+2g)×4.4/Rf</div>
+      </div>
+    </div>
+  </div>
+  <!-- P/B -->
+  <div id="p-rpb" class="spage">
+    <div class="two-col">
+      <div class="card"><div class="card-title">股價淨值比 P/B</div>
+        <div class="g2">
+          <div class="inp-grp"><label class="inp-label">每股淨值 BPS（元）</label><input type="number" id="pb-bps"></div>
+          <div class="inp-grp"><label class="inp-label">目前股價（元）</label><input type="number" id="pb-price"></div>
+          <div class="inp-grp"><label class="inp-label">ROE（%）</label><input type="number" id="pb-roe"></div>
+          <div class="inp-grp"><label class="inp-label">必要報酬率 r（%）</label><input type="number" id="pb-r"></div>
+          <div class="inp-grp"><label class="inp-label">同業平均 P/B</label><input type="number" id="pb-ind"></div>
+        </div>
+        <button class="btn btn-p" onclick="calcPB()" style="width:100%">計算</button>
+      </div>
+      <div class="card"><div class="card-title">結果</div>
+        <div class="rbox">
+          <div class="rrow"><span class="rlabel">目前 P/B</span><span class="rval" id="pb-curr">—</span></div>
+          <div class="rrow"><span class="rlabel">理論合理 P/B</span><span class="rval va" id="pb-th">—</span></div>
+          <div class="rrow"><span class="rlabel">理論合理股價</span><span class="rval va" id="pb-fair">—</span></div>
+          <div class="rrow"><span class="rlabel">評估</span><span id="pb-badge">—</span></div>
+        </div>
+        <div class="fbox" style="margin-top:14px">理論P/B = ROE ÷ 必要報酬率</div>
+      </div>
+    </div>
+  </div>
+  <!-- EV/EBITDA -->
+  <div id="p-rev" class="spage">
+    <div class="two-col">
+      <div class="card"><div class="card-title">EV/EBITDA</div>
+        <div class="g2">
+          <div class="inp-grp"><label class="inp-label">市值（億元）</label><input type="number" id="ev-mc"></div>
+          <div class="inp-grp"><label class="inp-label">有息負債（億元）</label><input type="number" id="ev-d"></div>
+          <div class="inp-grp"><label class="inp-label">現金及約當（億元）</label><input type="number" id="ev-c"></div>
+          <div class="inp-grp"><label class="inp-label">EBITDA（億元/年）</label><input type="number" id="ev-ebitda"></div>
+          <div class="inp-grp"><label class="inp-label">同業平均 EV/EBITDA</label><input type="number" id="ev-ind"></div>
+        </div>
+        <button class="btn btn-p" onclick="calcEV()" style="width:100%">計算</button>
+      </div>
+      <div class="card"><div class="card-title">結果</div>
+        <div class="rbox">
+          <div class="rrow"><span class="rlabel">企業價值 EV</span><span class="rval" id="ev-val">—</span></div>
+          <div class="rrow"><span class="rlabel">目前 EV/EBITDA</span><span class="rval" id="ev-curr">—</span></div>
+          <div class="rrow"><span class="rlabel">同業合理 EV</span><span class="rval va" id="ev-fair">—</span></div>
+          <div class="rrow"><span class="rlabel">潛在漲跌空間</span><span class="rval" id="ev-up">—</span></div>
+          <div class="rrow"><span class="rlabel">評估</span><span id="ev-badge">—</span></div>
+        </div>
+        <div class="fbox" style="margin-top:14px">EV = 市值 + 有息負債 − 現金</div>
+      </div>
+    </div>
+  </div>
+  <!-- PEG -->
+  <div id="p-rpeg" class="spage">
+    <div class="two-col">
+      <div class="card"><div class="card-title">PEG 成長調整本益比</div>
+        <div class="g2">
+          <div class="inp-grp"><label class="inp-label">目前 P/E</label><input type="number" id="peg-pe"></div>
+          <div class="inp-grp"><label class="inp-label">EPS年均成長率（%）3–5年</label><input type="number" id="peg-g"></div>
+          <div class="inp-grp"><label class="inp-label">EPS（元）</label><input type="number" id="peg-eps"></div>
+          <div class="inp-grp"><label class="inp-label">目前股價（元）</label><input type="number" id="peg-price"></div>
+        </div>
+        <button class="btn btn-p" onclick="calcPEG()" style="width:100%">計算</button>
+      </div>
+      <div class="card"><div class="card-title">結果</div>
+        <div class="rbox">
+          <div class="rrow"><span class="rlabel">PEG 比率</span><span class="rval" id="peg-val">—</span></div>
+          <div class="rrow"><span class="rlabel">PEG=1 合理股價</span><span class="rval va" id="peg-fair">—</span></div>
+          <div class="rrow"><span class="rlabel">評估</span><span id="peg-badge">—</span></div>
+        </div>
+        <div class="rbox" style="margin-top:12px">
+          <div class="rrow"><span class="rlabel">PEG &lt; 0.5</span><span class="rval vg">極度低估</span></div>
+          <div class="rrow"><span class="rlabel">0.5 – 1.0</span><span class="rval vg">低估合理</span></div>
+          <div class="rrow"><span class="rlabel">1.0 – 2.0</span><span class="rval vw">合理偏貴</span></div>
+          <div class="rrow"><span class="rlabel">&gt; 2.0</span><span class="rval vr">高估</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <!-- DDM -->
+  <div id="p-rddm" class="spage">
+    <div class="two-col">
+      <div class="card"><div class="card-title">DDM 股利折現 + CAPM</div>
+        <div class="g2">
+          <div class="inp-grp"><label class="inp-label">最近年度股利 D₀（元）</label><input type="number" id="ddm-d0"></div>
+          <div class="inp-grp"><label class="inp-label">股利成長率 g（%）</label><input type="number" id="ddm-g"></div>
+          <div class="inp-grp"><label class="inp-label">目前股價（元）</label><input type="number" id="ddm-price"></div>
+          <div class="inp-grp"><label class="inp-label">必要報酬率 r（%）</label><input type="number" id="ddm-r"></div>
+        </div>
+        <button class="btn btn-p" onclick="calcDDM()" style="width:100%;margin-bottom:14px">計算 DDM</button>
+        <hr class="div">
+        <div class="card-title">CAPM 輔助計算</div>
+        <div class="g2">
+          <div class="inp-grp"><label class="inp-label">無風險利率 Rf（%）</label><input type="number" id="capm-rf"></div>
+          <div class="inp-grp"><label class="inp-label">市場風險溢酬 ERP（%）</label><input type="number" id="capm-erp"></div>
+          <div class="inp-grp"><label class="inp-label">Beta 值 β</label><input type="number" id="capm-beta"></div>
+          <div class="inp-grp"><label class="inp-label">CAPM 結果</label>
+            <div id="capm-res" style="padding:8px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;font-family:'Space Mono',monospace;font-size:13px;color:var(--accent)">—</div>
+          </div>
+        </div>
+        <button class="btn btn-s" onclick="calcCAPM()" style="width:100%">計算 CAPM → 填入 r</button>
+      </div>
+      <div class="card"><div class="card-title">結果</div>
+        <div class="rbox">
+          <div class="rrow"><span class="rlabel">DDM 合理股價</span><span class="rval va" id="ddm-fair">—</span></div>
+          <div class="rrow"><span class="rlabel">目前殖利率</span><span class="rval" id="ddm-yield">—</span></div>
+          <div class="rrow"><span class="rlabel">評估</span><span id="ddm-badge">—</span></div>
+        </div>
+        <div class="fbox" style="margin-top:14px">DDM = D₀×(1+g)/(r−g)<br>CAPM: r = Rf + β×(Rm−Rf)</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ======== 財務評分 ======== -->
+<div id="p-score" class="page">
+  <div class="page-title">財務健康評分</div>
+  <div class="page-sub">// 獲利40 + 安全30 + 成長30 + Piotroski F-Score</div>
+  <div class="two-col">
+    <div>
+      <div class="card"><div class="card-title">📊 獲利能力（40分）</div>
+        <div class="g2">
+          <div class="inp-grp"><label class="inp-label">毛利率（%）</label><input type="number" id="sc-gpm"></div>
+          <div class="inp-grp"><label class="inp-label">營業利益率（%）</label><input type="number" id="sc-opm"></div>
+          <div class="inp-grp"><label class="inp-label">淨利率（%）</label><input type="number" id="sc-npm"></div>
+          <div class="inp-grp"><label class="inp-label">ROE（%）</label><input type="number" id="sc-roe"></div>
+          <div class="inp-grp"><label class="inp-label">ROA（%）</label><input type="number" id="sc-roa"></div>
+          <div class="inp-grp"><label class="inp-label">ROIC（%）</label><input type="number" id="sc-roic"></div>
+        </div>
+      </div>
+      <div class="card"><div class="card-title">🛡️ 財務安全（30分）</div>
+        <div class="g2">
+          <div class="inp-grp"><label class="inp-label">流動比率</label><input type="number" id="sc-cr"></div>
+          <div class="inp-grp"><label class="inp-label">速動比率</label><input type="number" id="sc-qr"></div>
+          <div class="inp-grp"><label class="inp-label">負債比率（%）</label><input type="number" id="sc-dr"></div>
+          <div class="inp-grp"><label class="inp-label">利息保障倍數</label><input type="number" id="sc-ic"></div>
+        </div>
+      </div>
+      <div class="card"><div class="card-title">📈 成長動能（30分）</div>
+        <div class="g2">
+          <div class="inp-grp"><label class="inp-label">營收 YoY（%）</label><input type="number" id="sc-rg"></div>
+          <div class="inp-grp"><label class="inp-label">EPS YoY（%）</label><input type="number" id="sc-eg"></div>
+          <div class="inp-grp"><label class="inp-label">FCF YoY（%）</label><input type="number" id="sc-fg"></div>
+          <div class="inp-grp"><label class="inp-label">股利成長率（%）</label><input type="number" id="sc-dg"></div>
+        </div>
+      </div>
+      <button class="btn btn-p" onclick="calcScore()" style="width:100%">▶ 計算綜合評分</button>
+    </div>
+    <div>
+      <div class="card"><div class="card-title">綜合評分</div>
+        <div id="sc-ph" style="text-align:center;padding:50px;color:var(--text3);font-size:13px">輸入後點擊計算</div>
+        <div id="sc-out" style="display:none">
+          <div class="big-r"><div class="big-label">總體評分</div><div class="big-val" id="sc-total">—</div><div class="big-sub" id="sc-grade">—</div></div>
+          <div style="margin-top:16px">
+            <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:12px;color:var(--text2)">獲利能力(40)</span><span style="font-family:'Space Mono',monospace;font-size:12px;font-weight:700" id="sc-p">—</span></div>
+            <div class="smeter" id="sm-p"></div>
+            <div style="display:flex;justify-content:space-between;margin:10px 0 4px"><span style="font-size:12px;color:var(--text2)">財務安全(30)</span><span style="font-family:'Space Mono',monospace;font-size:12px;font-weight:700" id="sc-s">—</span></div>
+            <div class="smeter" id="sm-s"></div>
+            <div style="display:flex;justify-content:space-between;margin:10px 0 4px"><span style="font-size:12px;color:var(--text2)">成長動能(30)</span><span style="font-family:'Space Mono',monospace;font-size:12px;font-weight:700" id="sc-g">—</span></div>
+            <div class="smeter" id="sm-g"></div>
+          </div>
+          <div class="rbox" style="margin-top:14px" id="sc-detail"></div>
+        </div>
+      </div>
+      <div class="card"><div class="card-title">Piotroski F-Score</div>
+        <div style="font-size:12px;color:var(--text2);margin-bottom:10px">9分最強；≥7可考慮買入</div>
+        <div id="fscores">
+          <div style="display:grid;grid-template-columns:1fr auto;gap:8px;padding:5px 0;border-bottom:1px solid rgba(0,0,0,.04)"><span style="font-size:12px;color:var(--text2)">1. ROA &gt; 0</span><select id="f1" style="width:75px;padding:3px 6px;font-size:11px"><option value="" selected>— 未選 —</option><option value="1">是 ✓</option><option value="0">否 ✗</option></select></div>
+          <div style="display:grid;grid-template-columns:1fr auto;gap:8px;padding:5px 0;border-bottom:1px solid rgba(0,0,0,.04)"><span style="font-size:12px;color:var(--text2)">2. 營業現金流 &gt; 0</span><select id="f2" style="width:75px;padding:3px 6px;font-size:11px"><option value="" selected>— 未選 —</option><option value="1">是 ✓</option><option value="0">否 ✗</option></select></div>
+          <div style="display:grid;grid-template-columns:1fr auto;gap:8px;padding:5px 0;border-bottom:1px solid rgba(0,0,0,.04)"><span style="font-size:12px;color:var(--text2)">3. ROA 年增</span><select id="f3" style="width:75px;padding:3px 6px;font-size:11px"><option value="" selected>— 未選 —</option><option value="1">是 ✓</option><option value="0">否 ✗</option></select></div>
+          <div style="display:grid;grid-template-columns:1fr auto;gap:8px;padding:5px 0;border-bottom:1px solid rgba(0,0,0,.04)"><span style="font-size:12px;color:var(--text2)">4. 現金流 &gt; 淨利</span><select id="f4" style="width:75px;padding:3px 6px;font-size:11px"><option value="" selected>— 未選 —</option><option value="1">是 ✓</option><option value="0">否 ✗</option></select></div>
+          <div style="display:grid;grid-template-columns:1fr auto;gap:8px;padding:5px 0;border-bottom:1px solid rgba(0,0,0,.04)"><span style="font-size:12px;color:var(--text2)">5. 長期負債比下降</span><select id="f5" style="width:75px;padding:3px 6px;font-size:11px"><option value="" selected>— 未選 —</option><option value="1">是 ✓</option><option value="0">否 ✗</option></select></div>
+          <div style="display:grid;grid-template-columns:1fr auto;gap:8px;padding:5px 0;border-bottom:1px solid rgba(0,0,0,.04)"><span style="font-size:12px;color:var(--text2)">6. 流動比率提升</span><select id="f6" style="width:75px;padding:3px 6px;font-size:11px"><option value="" selected>— 未選 —</option><option value="1">是 ✓</option><option value="0">否 ✗</option></select></div>
+          <div style="display:grid;grid-template-columns:1fr auto;gap:8px;padding:5px 0;border-bottom:1px solid rgba(0,0,0,.04)"><span style="font-size:12px;color:var(--text2)">7. 未增發股份</span><select id="f7" style="width:75px;padding:3px 6px;font-size:11px"><option value="" selected>— 未選 —</option><option value="1">是 ✓</option><option value="0">否 ✗</option></select></div>
+          <div style="display:grid;grid-template-columns:1fr auto;gap:8px;padding:5px 0;border-bottom:1px solid rgba(0,0,0,.04)"><span style="font-size:12px;color:var(--text2)">8. 毛利率提升</span><select id="f8" style="width:75px;padding:3px 6px;font-size:11px"><option value="" selected>— 未選 —</option><option value="1">是 ✓</option><option value="0">否 ✗</option></select></div>
+          <div style="display:grid;grid-template-columns:1fr auto;gap:8px;padding:5px 0"><span style="font-size:12px;color:var(--text2)">9. 資產周轉率提升</span><select id="f9" style="width:75px;padding:3px 6px;font-size:11px"><option value="" selected>— 未選 —</option><option value="1">是 ✓</option><option value="0">否 ✗</option></select></div>
+        </div>
+        <button class="btn btn-s" onclick="calcFScore()" style="width:100%;margin-top:10px">計算 F-Score</button>
+        <div id="fs-out" style="display:none" class="big-r" style="margin-top:12px">
+          <div class="big-label">Piotroski F-Score</div>
+          <div class="big-val" id="fs-val">—</div>
+          <div class="big-sub" id="fs-vd">—</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ======== 選股 ======== -->
+<div id="p-screener" class="page">
+  <div class="page-title">選股篩選系統</div>
+  <div class="page-sub">// 設定條件 → 加入清單 → 執行篩選評分</div>
+  <div class="two-col">
+    <div>
+      <div class="card"><div class="card-title">策略條件</div>
+        <div class="inp-grp"><label class="inp-label">快速模板</label>
+          <select id="tmpl" onchange="loadTmpl()">
+            <option value="">自訂</option>
+            <option value="value">📦 葛拉漢價值投資</option>
+            <option value="growth">🚀 成長型</option>
+            <option value="dividend">💰 高殖利率存股</option>
+            <option value="quality">🏆 高品質複利（巴菲特）</option>
+            <option value="momentum">⚡ 動能</option>
+          </select>
+        </div>
+        <hr class="div">
+        <div style="font-size:11px;font-weight:700;color:var(--accent);margin-bottom:10px;font-family:'Space Mono',monospace">估值條件</div>
+        <div class="g2">
+          <div class="inp-grp"><label class="inp-label">P/E ≤</label><input type="number" id="f-pe"></div>
+          <div class="inp-grp"><label class="inp-label">P/B ≤</label><input type="number" id="f-pb"></div>
+          <div class="inp-grp"><label class="inp-label">PEG ≤</label><input type="number" id="f-peg"></div>
+          <div class="inp-grp"><label class="inp-label">EV/EBITDA ≤</label><input type="number" id="f-ev"></div>
+        </div>
+        <div style="font-size:11px;font-weight:700;color:var(--accent);margin-bottom:10px;font-family:'Space Mono',monospace">獲利條件</div>
+        <div class="g2">
+          <div class="inp-grp"><label class="inp-label">ROE ≥（%）</label><input type="number" id="f-roe"></div>
+          <div class="inp-grp"><label class="inp-label">毛利率 ≥（%）</label><input type="number" id="f-gpm"></div>
+          <div class="inp-grp"><label class="inp-label">淨利率 ≥（%）</label><input type="number" id="f-npm"></div>
+          <div class="inp-grp"><label class="inp-label">EPS成長 ≥（%）</label><input type="number" id="f-epsg"></div>
+        </div>
+        <div style="font-size:11px;font-weight:700;color:var(--accent);margin-bottom:10px;font-family:'Space Mono',monospace">財務安全</div>
+        <div class="g2">
+          <div class="inp-grp"><label class="inp-label">流動比率 ≥</label><input type="number" id="f-cr"></div>
+          <div class="inp-grp"><label class="inp-label">負債率 ≤（%）</label><input type="number" id="f-dr"></div>
+          <div class="inp-grp"><label class="inp-label">殖利率 ≥（%）</label><input type="number" id="f-yield"></div>
+          <div class="inp-grp"><label class="inp-label">F-Score ≥</label><input type="number" id="f-fs"></div>
+        </div>
+      </div>
+      <div class="card"><div class="card-title">輸入待篩股票</div>
+        <div class="g2">
+          <div class="inp-grp"><label class="inp-label">代碼/名稱</label><input type="text" id="s-name"></div>
+          <div class="inp-grp"><label class="inp-label">P/E</label><input type="number" id="s-pe"></div>
+          <div class="inp-grp"><label class="inp-label">P/B</label><input type="number" id="s-pb"></div>
+          <div class="inp-grp"><label class="inp-label">EV/EBITDA</label><input type="number" id="s-ev"></div>
+          <div class="inp-grp"><label class="inp-label">PEG</label><input type="number" id="s-peg"></div>
+          <div class="inp-grp"><label class="inp-label">ROE（%）</label><input type="number" id="s-roe"></div>
+          <div class="inp-grp"><label class="inp-label">毛利率（%）</label><input type="number" id="s-gpm"></div>
+          <div class="inp-grp"><label class="inp-label">淨利率（%）</label><input type="number" id="s-npm"></div>
+          <div class="inp-grp"><label class="inp-label">EPS成長（%）</label><input type="number" id="s-epsg"></div>
+          <div class="inp-grp"><label class="inp-label">流動比率</label><input type="number" id="s-cr"></div>
+          <div class="inp-grp"><label class="inp-label">負債率（%）</label><input type="number" id="s-dr"></div>
+          <div class="inp-grp"><label class="inp-label">殖利率（%）</label><input type="number" id="s-yield"></div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:4px">
+          <button class="btn btn-s" onclick="addStock()" style="flex:1">+ 加入清單</button>
+          <button class="btn btn-p" onclick="runScreener()" style="flex:1">▶ 執行篩選</button>
+        </div>
+        <div id="s-list" style="margin-top:12px"></div>
+      </div>
+    </div>
+    <div>
+      <div class="card"><div class="card-title">篩選結果</div>
+        <div id="sc-sph" style="text-align:center;padding:50px;color:var(--text3);font-size:13px">請加入股票並執行篩選</div>
+        <div id="sc-sout" style="display:none"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ======== ALTMAN ======== -->
+<div id="p-altman" class="page">
+  <div class="page-title">Altman Z-Score</div>
+  <div class="page-sub">// 五因子破產預測模型 — 準確率約 72–80%</div>
+  <div class="two-col">
+    <div class="card"><div class="card-title">輸入五項財務比率</div>
+      <div class="inp-grp"><label class="inp-label">X₁ = 營運資金 / 總資產</label><input type="number" id="z-x1"><div class="inp-hint">（流動資產－流動負債）÷ 總資產</div></div>
+      <div class="inp-grp"><label class="inp-label">X₂ = 保留盈餘 / 總資產</label><input type="number" id="z-x2"></div>
+      <div class="inp-grp"><label class="inp-label">X₃ = EBIT / 總資產</label><input type="number" id="z-x3"></div>
+      <div class="inp-grp"><label class="inp-label">X₄ = 股東權益市值 / 總負債帳面</label><input type="number" id="z-x4"></div>
+      <div class="inp-grp"><label class="inp-label">X₅ = 營收 / 總資產</label><input type="number" id="z-x5"></div>
+      <button class="btn btn-p" onclick="calcAltman()" style="width:100%;margin-top:6px">▶ 計算 Z-Score</button>
+      <div class="fbox" style="margin-top:14px">Z = 1.2X₁ + 1.4X₂ + 3.3X₃ + 0.6X₄ + 1.0X₅</div>
+    </div>
+    <div>
+      <div class="card"><div class="card-title">Z-Score 結果</div>
+        <div id="z-ph" style="text-align:center;padding:60px;color:var(--text3);font-size:13px">輸入後點擊計算</div>
+        <div id="z-out" style="display:none">
+          <div class="big-r"><div class="big-label">Altman Z-Score</div><div class="big-val" id="z-score">—</div><div class="big-sub" id="z-vd">—</div></div>
+          <div class="rbox" style="margin-top:14px">
+            <div class="rrow"><span class="rlabel">1.2 × X₁</span><span class="rval va" id="z-c1">—</span></div>
+            <div class="rrow"><span class="rlabel">1.4 × X₂</span><span class="rval va" id="z-c2">—</span></div>
+            <div class="rrow"><span class="rlabel">3.3 × X₃</span><span class="rval va" id="z-c3">—</span></div>
+            <div class="rrow"><span class="rlabel">0.6 × X₄</span><span class="rval va" id="z-c4">—</span></div>
+            <div class="rrow"><span class="rlabel">1.0 × X₅</span><span class="rval va" id="z-c5">—</span></div>
+          </div>
+          <div class="rbox" style="margin-top:12px">
+            <div class="rrow"><span class="rlabel">Z &gt; 2.99</span><span class="rval vg">✅ 安全</span></div>
+            <div class="rrow"><span class="rlabel">1.81 – 2.99</span><span class="rval vw">⚠️ 灰色警戒</span></div>
+            <div class="rrow"><span class="rlabel">Z &lt; 1.81</span><span class="rval vr">❌ 危險</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ======== 公式手冊 ======== -->
+<div id="p-formula" class="page">
+  <div class="page-title">估值公式手冊</div>
+  <div class="page-sub">// 專業投資人完整公式庫</div>
+  <div class="g2">
+    <div>
+      <div class="card"><div class="card-title">獲利能力</div>
+        <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:6px">ROE 杜邦分析</div>
+        <div class="fbox">ROE = 淨利率 × 資產周轉率 × 財務槓桿<br>= (淨利/營收) × (營收/總資產) × (總資產/股東權益)</div>
+        <div style="font-size:13px;font-weight:700;color:var(--text);margin:12px 0 6px">ROIC</div>
+        <div class="fbox">ROIC = NOPAT / 投入資本<br>= EBIT×(1−稅率) / (股東權益+有息負債)<br>超額報酬 = ROIC − WACC（正值=創造價值）</div>
+      </div>
+      <div class="card"><div class="card-title">估值核心</div>
+        <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:6px">DCF</div>
+        <div class="fbox">FCF = 營業現金流 − CapEx<br>IV = Σ FCFₙ/(1+r)ⁿ + TV/(1+r)ᴺ<br>TV = FCF_N×(1+g)/(r−g)</div>
+        <div style="font-size:13px;font-weight:700;color:var(--text);margin:12px 0 6px">葛拉漢公式</div>
+        <div class="fbox">IV = EPS×(8.5+2g)×4.4/Rf</div>
+        <div style="font-size:13px;font-weight:700;color:var(--text);margin:12px 0 6px">Gordon Growth Model</div>
+        <div class="fbox">P = D₁/(r−g) = D₀×(1+g)/(r−g)</div>
+      </div>
+    </div>
+    <div>
+      <div class="card"><div class="card-title">財務安全</div>
+        <div class="fbox">流動比率 = 流動資產/流動負債（&gt;2優）<br>速動比率 = (流動資產−存貨)/流動負債（&gt;1優）<br>負債比率 = 總負債/總資產<br>利息保障 = EBIT/利息費用（&gt;5安全）</div>
+        <div style="font-size:13px;font-weight:700;color:var(--text);margin:12px 0 6px">Altman Z</div>
+        <div class="fbox">Z = 1.2X₁+1.4X₂+3.3X₃+0.6X₄+1.0X₅<br>&gt;2.99安全 | 1.81–2.99灰色 | &lt;1.81危險</div>
+      </div>
+      <div class="card"><div class="card-title">選股框架（巴菲特）</div>
+        <div class="fbox">✓ ROE &gt; 15%（連續5年）<br>✓ ROIC &gt; WACC（護城河確認）<br>✓ 毛利率 &gt; 40%（定價能力）<br>✓ FCF 連年正值<br>✓ 負債/股東權益 &lt; 0.5<br>✓ EPS 連續成長5年以上<br>✓ F-Score ≥ 7<br>✓ DCF MoS ≥ 25%</div>
+        <div style="font-size:13px;font-weight:700;color:var(--text);margin:12px 0 6px">CAPM + WACC</div>
+        <div class="fbox">r = Rf + β×(Rm−Rf)<br>WACC = E/(E+D)×Re + D/(E+D)×Rd×(1−t)</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</main>
+
+<script>
+// ── Navigation ──────────────────────────────────────
+function goPage(id, btn) {
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));
+  document.querySelectorAll('#main-tabs .tab').forEach(t=>t.classList.remove('on'));
+  document.getElementById('p-'+id).classList.add('on');
+  btn.classList.add('on');
+  if (id==='dash') setTimeout(initDash, 80);
+}
+function goSub(group, id, btn) {
+  const par = document.getElementById('p-'+group);
+  par.querySelectorAll('.spage').forEach(p=>p.classList.remove('on'));
+  par.querySelectorAll('.stab').forEach(t=>t.classList.remove('on'));
+  document.getElementById('p-'+id).classList.add('on');
+  btn.classList.add('on');
+}
+
+// ── Utils ───────────────────────────────────────────
+const v  = id => parseFloat(document.getElementById(id)?.value)||0;
+const f2 = (n,d=2) => n==null||isNaN(n)||!isFinite(n)?'—':n.toFixed(d);
+const badge = (id,cls,txt) => { const e=document.getElementById(id); if(e) e.innerHTML=`<span class="badge ${cls}">${txt}</span>`; };
+const meter = (id, score, max) => {
+  const e=document.getElementById(id); if(!e) return;
+  const n=10, filled=Math.round((score/max)*n);
+  const cls=score/max>=.7?'sg':score/max>=.4?'sw':'sr';
+  e.innerHTML=Array.from({length:n},(_,i)=>`<div class="sblock ${i<filled?cls:''}"></div>`).join('');
+};
+
+// ── DB Loading ──────────────────────────────────────
+let DB=null, DBS={};
+window.addEventListener('DOMContentLoaded', () => {
+  if (window.STOCK_DB?.stocks) {
+    DB=window.STOCK_DB; DBS=DB.stocks||{};
+    const total=Object.keys(DBS).length, fm=DB.sources?.finmind||0;
+    setDot('ok', `已載入 ${total} 支 · 財務 ${fm} 支 · ${DB.updated||''}`);
+  } else {
+    setDot('err','找不到 data/stock_data.js — 請先執行 GitHub Actions 或本地 fetcher');
+    document.getElementById('db-hint').textContent='💡 首次使用：Fork 此 repo → Settings → Actions → 執行 daily-update';
+    document.getElementById('ticker-row').style.display='block';
+  }
+});
+function setDot(state, msg) {
+  document.getElementById('db-dot').className='dot '+state;
+  const t=document.getElementById('db-msg');
+  t.textContent=msg;
+  t.style.color=state==='ok'?'var(--green)':state==='err'?'var(--red)':'var(--warn)';
+}
+
+// ── Search ──────────────────────────────────────────
+let stimer=null;
+function onSrchInput(val) {
+  clearTimeout(stimer);
+  stimer=setTimeout(()=>showSug(val.trim()), 150);
+}
+function showSug(q) {
+  const box=document.getElementById('sbox');
+  if (!q){box.style.display='none';return;}
+  const matches=Object.entries(DBS)
+    .filter(([code,d])=>code.startsWith(q)||(d.name||'').includes(q))
+    .slice(0,10);
+  if (!matches.length){box.style.display='none';return;}
+  box.innerHTML=matches.map(([code,d])=>
+    `<div class="sug-item" onclick="selStock('${code}')">
+      <span>${d.name||code}</span><span class="sug-code">${code}</span>
+    </div>`).join('');
+  box.style.display='block';
+}
+function selStock(code) {
+  const d=DBS[code];
+  document.getElementById('sq').value=code+' '+(d?.name||'');
+  document.getElementById('sbox').style.display='none';
+  loadStock(code);
+}
+document.addEventListener('click',e=>{ if(!e.target.closest('.srch-wrap')) document.getElementById('sbox').style.display='none'; });
+function loadStock(forceCode) {
+  const raw=forceCode||document.getElementById('sq').value.trim();
+  const m=raw.match(/\d{4}/); if(!m){alert('請輸入台股代碼');return;}
+  const code=m[0];
+  if (!DBS[code]){alert(`代碼 ${code} 不在資料庫中`);return;}
+  fillAll(code, DBS[code]);
+  renderTicker(code, DBS[code]);
+}
+function fillAll(code, d) {
+  const set=(id,val)=>{ const e=document.getElementById(id); if(!e) return; if(val!=null&&!isNaN(parseFloat(val))) e.value=parseFloat(parseFloat(val).toFixed(4)); else e.value=''; };
+  set('dcf-price',d.close); set('dcf-shares',d.shares?d.shares/1e6:null); set('dcf-fcf',d.fcf); set('dcf-debt',d.net_debt);
+  set('pe-eps',d.eps); set('pe-price',d.close); set('pe-g',d.eps_growth); set('pe-rf',3.5);
+  set('pb-bps',d.bps); set('pb-price',d.close); set('pb-roe',d.roe);
+  set('ev-mc',d.market_cap); set('ev-d',d.net_debt>0?d.net_debt:0); set('ev-c',d.net_debt<0?-d.net_debt:0);
+  set('peg-pe',d.pe); set('peg-eps',d.eps); set('peg-price',d.close); set('peg-g',d.eps_growth);
+  set('ddm-d0',d.cash_div); set('ddm-price',d.close); set('capm-rf',3.5); set('capm-beta',null);
+  set('sc-gpm',d.gross_margin); set('sc-opm',d.op_margin); set('sc-npm',d.net_margin);
+  set('sc-roe',d.roe); set('sc-roa',d.roa); set('sc-roic',d.roic);
+  set('sc-cr',d.current_ratio); set('sc-qr',d.quick_ratio); set('sc-dr',d.debt_ratio); set('sc-ic',d.interest_coverage);
+  set('sc-rg',d.rev_growth); set('sc-eg',d.eps_growth); set('sc-fg',d.fcf_growth); set('sc-dg',d.div_growth);
+  const nm=document.getElementById('s-name'); if(nm) nm.value=code+' '+(d.name||'');
+  set('s-pe',d.pe); set('s-pb',d.pb); set('s-roe',d.roe); set('s-gpm',d.gross_margin);
+  set('s-npm',d.net_margin); set('s-epsg',d.eps_growth); set('s-cr',d.current_ratio);
+  set('s-dr',d.debt_ratio); set('s-yield',d.div_yield);
+  set('z-x1',d.z_x1); set('z-x2',d.z_x2); set('z-x3',d.z_x3); set('z-x4',d.z_x4); set('z-x5',d.z_x5);
+  if (d.kline_code) document.getElementById('kl-code').value=code;
+  const filled=['close','pe','pb','div_yield','cash_div','eps','eps_growth','bps','roe','roa','roic','gross_margin','op_margin','net_margin','current_ratio','quick_ratio','debt_ratio','interest_coverage','fcf','net_debt','shares','z_x1','z_x2','z_x3','z_x4','z_x5'].filter(k=>d[k]!=null);
+  document.getElementById('fill-msg').innerHTML=
+    `<div class="fill-ok">✅ 自動填入 ${filled.length} 項</div>`;
+}
+function renderTicker(code,d) {
+  document.getElementById('ticker-row').style.display='block';
+  const up=d.close&&d.open_price&&d.close>=d.open_price;
+  const pc=d.close&&d.open_price?((d.close-d.open_price)/d.open_price*100).toFixed(2):null;
+  const chips=[
+    ['股票',`${code} ${d.name||''}`,'var(--text)'],
+    ['收盤',d.close?'$'+d.close.toFixed(2):null,up?'var(--green)':'var(--red)'],
+    ['P/E',d.pe?d.pe.toFixed(1)+'x':null,'var(--accent)'],
+    ['P/B',d.pb?d.pb.toFixed(2)+'x':null,'var(--accent)'],
+    ['殖利率',d.div_yield?d.div_yield.toFixed(2)+'%':null,'var(--accent)'],
+    ['現金股利',d.cash_div?'$'+d.cash_div.toFixed(2):null,'var(--accent)'],
+    ['EPS',d.eps?'$'+d.eps.toFixed(2):null,'var(--accent)'],
+    ['ROE',d.roe?d.roe.toFixed(1)+'%':null,'var(--accent)'],
+    ['毛利率',d.gross_margin?d.gross_margin.toFixed(1)+'%':null,'var(--accent)'],
+  ].filter(([,val])=>val!=null);
+  document.getElementById('ticker-strip').innerHTML=chips.map(([l,val,c])=>
+    `<div class="t-chip"><span class="t-label">${l}</span><span class="t-val" style="color:${c||'var(--accent)'}">${val}</span></div>`).join('');
+}
+
+// ── DCF ─────────────────────────────────────────────
+function calcDCF() {
+  const fcf0=v('dcf-fcf')*1e8, n1=v('dcf-n1'), g1=v('dcf-g1')/100;
+  const n2=v('dcf-n2'), g2=v('dcf-g2')/100, gT=v('dcf-gT')/100;
+  const wacc=v('dcf-wacc')/100, debt=v('dcf-debt')*1e8;
+  const shares=v('dcf-shares')*1e6, price=v('dcf-price');
+  let pv1=0,pv2=0,fcf=fcf0;
+  for(let i=1;i<=n1;i++){fcf*=(1+g1);pv1+=fcf/Math.pow(1+wacc,i);}
+  for(let i=1;i<=n2;i++){fcf*=(1+g2);pv2+=fcf/Math.pow(1+wacc,n1+i);}
+  const tv=fcf*(1+gT)/(wacc-gT), pvt=tv/Math.pow(1+wacc,n1+n2);
+  const ev=pv1+pv2+pvt, equity=ev-debt, fair=equity/shares;
+  const mos=(fair-price)/fair*100;
+  document.getElementById('dcf-ph').style.display='none';
+  document.getElementById('dcf-out').style.display='block';
+  document.getElementById('dcf-pv1').textContent=f2(pv1/1e8)+'億';
+  document.getElementById('dcf-pv2').textContent=f2(pv2/1e8)+'億';
+  document.getElementById('dcf-pvt').textContent=f2(pvt/1e8)+'億';
+  document.getElementById('dcf-ev').textContent=f2(ev/1e8)+'億';
+  const me=document.getElementById('dcf-mos');
+  me.textContent=f2(mos)+'%'; me.className='rval '+(mos>=20?'vg':mos>=0?'vw':'vr');
+  const fe=document.getElementById('dcf-fv'); fe.textContent='$'+f2(fair); fe.style.color=fair>price?'var(--green)':'var(--red)';
+  const vd=document.getElementById('dcf-vd');
+  if(mos>=30){vd.textContent='✅ 顯著低估 MoS>30%';vd.style.color='var(--green)';}
+  else if(mos>=20){vd.textContent='✅ 低估 MoS>20%';vd.style.color='var(--green)';}
+  else if(mos>=0){vd.textContent='⚠️ 合理';vd.style.color='var(--warn)';}
+  else{vd.textContent='❌ 高估 MoS='+f2(mos)+'%';vd.style.color='var(--red)';}
+  // Sensitivity
+  const wA=[wacc-.02,wacc-.01,wacc,wacc+.01,wacc+.02], gA=[gT-.01,gT-.005,gT,gT+.005,gT+.01];
+  let h='<thead><tr style="background:var(--surface2)"><th style="padding:6px 10px">WACC↓ g→</th>'+gA.map(g=>`<th style="padding:6px 8px">${(g*100).toFixed(1)}%</th>`).join('')+'</tr></thead><tbody>';
+  wA.forEach(w=>{
+    h+=`<tr><td style="padding:6px 10px;font-family:\'Space Mono\',monospace;background:var(--surface2)">${(w*100).toFixed(1)}%</td>`;
+    gA.forEach(g=>{
+      if(w<=g){h+='<td style="color:var(--text3);padding:5px 8px">N/A</td>';return;}
+      let p1=0,p2=0,f2_=fcf0; for(let i=1;i<=n1;i++){f2_*=(1+g1);p1+=f2_/Math.pow(1+w,i);} for(let i=1;i<=n2;i++){f2_*=(1+g2);p2+=f2_/Math.pow(1+w,n1+i);}
+      const t2=f2_*(1+g)/(w-g),pt2=t2/Math.pow(1+w,n1+n2),fair2=(p1+p2+pt2-debt)/shares;
+      const m2=(fair2-price)/fair2*100, c=m2>=20?'var(--green)':m2>=0?'var(--warn)':'var(--red)';
+      h+=`<td style="color:${c};padding:5px 8px;font-family:\'Space Mono\',monospace;font-size:11px">${f2(fair2)}</td>`;
+    }); h+='</tr>';
+  }); h+='</tbody>';
+  document.getElementById('dcf-sens').innerHTML=h;
+}
+
+// ── PE ──────────────────────────────────────────────
+function calcPE(){const eps=v('pe-eps'),price=v('pe-price'),g=v('pe-g'),rf=v('pe-rf'),ind=v('pe-ind'),hist=v('pe-hist');const curr=price/eps,iv=ind*eps,hv=hist*eps,gv=eps*(8.5+2*g)*4.4/rf;const avg=(iv+hv+gv)/3,diff=(avg-price)/price*100;document.getElementById('pe-curr').textContent=f2(curr)+'x';document.getElementById('pe-iv').textContent='$'+f2(iv);document.getElementById('pe-hv').textContent='$'+f2(hv);document.getElementById('pe-gv').textContent='$'+f2(gv);document.getElementById('pe-avg').textContent='$'+f2(avg);const de=document.getElementById('pe-avg');de.className='rval '+(diff>=0?'vg':'vr');if(diff>=20)badge('pe-badge','bb','低估 買入');else if(diff>=0)badge('pe-badge','bh','合理 觀察');else badge('pe-badge','bs','高估 避開');}
+function calcPB(){const bps=v('pb-bps'),price=v('pb-price'),roe=v('pb-roe'),r=v('pb-r'),ind=v('pb-ind');const curr=price/bps,th=roe/r,fair=bps*th,iF=bps*ind;document.getElementById('pb-curr').textContent=f2(curr)+'x';document.getElementById('pb-th').textContent=f2(th)+'x';document.getElementById('pb-fair').textContent='$'+f2(fair);if(price<(fair+iF)/2*.9)badge('pb-badge','bb','低估');else if(price<(fair+iF)/2)badge('pb-badge','bh','合理');else badge('pb-badge','bs','偏貴');}
+function calcEV(){const mc=v('ev-mc'),d=v('ev-d'),c=v('ev-c'),ebitda=v('ev-ebitda'),ind=v('ev-ind');const ev=mc+d-c,curr=ev/ebitda,fair=ebitda*ind,up=(fair-ev)/ev*100;document.getElementById('ev-val').textContent=f2(ev)+'億';document.getElementById('ev-curr').textContent=f2(curr)+'x';document.getElementById('ev-fair').textContent=f2(fair)+'億';const ue=document.getElementById('ev-up');ue.textContent=(up>=0?'+':'')+f2(up)+'%';ue.className='rval '+(up>=0?'vg':'vr');if(up>=20)badge('ev-badge','bb','低估');else if(up>=0)badge('ev-badge','bh','合理');else badge('ev-badge','bs','高估');}
+function calcPEG(){const pe=v('peg-pe'),g=v('peg-g'),eps=v('peg-eps');const peg=pe/g,fair=eps*g;document.getElementById('peg-val').textContent=f2(peg)+'x';document.getElementById('peg-fair').textContent='$'+f2(fair);if(peg<.5)badge('peg-badge','bb','極度低估 PEG<0.5');else if(peg<1)badge('peg-badge','bb','低估 PEG<1');else if(peg<2)badge('peg-badge','bh','合理偏貴');else badge('peg-badge','bs','高估 PEG>2');}
+function calcCAPM(){const rf=v('capm-rf'),erp=v('capm-erp'),beta=v('capm-beta');const r=rf+beta*erp;document.getElementById('capm-res').textContent=f2(r)+'%';document.getElementById('ddm-r').value=f2(r);}
+function calcDDM(){const d0=v('ddm-d0'),g=v('ddm-g')/100,r=v('ddm-r')/100,price=v('ddm-price');if(r<=g){alert('必要報酬率必須大於成長率！');return;}const fair=d0*(1+g)/(r-g),yld=d0/price*100;document.getElementById('ddm-fair').textContent='$'+f2(fair);document.getElementById('ddm-yield').textContent=f2(yld)+'%';const diff=(fair-price)/price*100;if(diff>=20)badge('ddm-badge','bb','低估');else if(diff>=0)badge('ddm-badge','bh','合理');else badge('ddm-badge','bs','高估');}
+
+// ── Score ────────────────────────────────────────────
+function calcScore(){
+  const gpm=v('sc-gpm'),opm=v('sc-opm'),npm=v('sc-npm'),roe=v('sc-roe'),roa=v('sc-roa'),roic=v('sc-roic');
+  const cr=v('sc-cr'),qr=v('sc-qr'),dr=v('sc-dr'),ic=v('sc-ic');
+  const rg=v('sc-rg'),eg=v('sc-eg'),fg=v('sc-fg'),dg=v('sc-dg');
+  let p=0,s=0,g=0;
+  p+=gpm>50?8:gpm>35?5:gpm>20?2:0; p+=opm>25?7:opm>15?4:opm>8?2:0;
+  p+=npm>20?7:npm>12?4:npm>5?2:0;  p+=roe>20?8:roe>15?5:roe>10?2:0;
+  p+=roa>15?5:roa>8?3:roa>3?1:0;   p+=roic>20?5:roic>12?3:roic>8?1:0;
+  s+=cr>2.5?8:cr>1.5?5:cr>1?2:0;   s+=qr>2?7:qr>1?4:qr>.7?2:0;
+  s+=dr<20?8:dr<40?5:dr<60?2:0;    s+=ic>10?7:ic>5?4:ic>3?2:0;
+  g+=rg>20?8:rg>10?5:rg>5?2:0;     g+=eg>20?9:eg>12?6:eg>5?2:0;
+  g+=fg>15?8:fg>8?5:fg>0?2:0;      g+=dg>10?5:dg>5?3:dg>0?1:0;
+  const total=p+s+g;
+  document.getElementById('sc-ph').style.display='none';
+  document.getElementById('sc-out').style.display='block';
+  const ts=document.getElementById('sc-total'); ts.textContent=total;
+  ts.style.color=total>=75?'var(--green)':total>=50?'var(--warn)':'var(--red)';
+  const gr=[[90,'S — 頂尖'],[75,'A — 優質'],[60,'B — 良好'],[45,'C — 普通'],[0,'D — 謹慎']].find(([m])=>total>=m);
+  document.getElementById('sc-grade').textContent=gr[1];
+  document.getElementById('sc-p').textContent=p+'/40'; document.getElementById('sc-s').textContent=s+'/30'; document.getElementById('sc-g').textContent=g+'/30';
+  meter('sm-p',p,40); meter('sm-s',s,30); meter('sm-g',g,30);
+  document.getElementById('sc-detail').innerHTML=`<div class="rrow"><span class="rlabel">毛利率 ${gpm}%</span><span class="rval ${gpm>50?'vg':gpm>35?'vw':'vr'}">${gpm>50?'卓越':gpm>35?'良好':'一般'}</span></div><div class="rrow"><span class="rlabel">ROE ${roe}%</span><span class="rval ${roe>20?'vg':roe>15?'vw':'vr'}">${roe>20?'優秀':roe>15?'良好':'一般'}</span></div><div class="rrow"><span class="rlabel">流動比率 ${cr}</span><span class="rval ${cr>2?'vg':cr>1.5?'vw':'vr'}">${cr>2?'健康':cr>1.5?'尚可':'注意'}</span></div><div class="rrow"><span class="rlabel">EPS成長 ${eg}%</span><span class="rval ${eg>15?'vg':eg>8?'vw':'vr'}">${eg>15?'強勁':eg>8?'穩健':'緩慢'}</span></div>`;
+}
+function calcFScore(){let s=0;for(let i=1;i<=9;i++){const v=document.getElementById('f'+i).value;if(v!=='')s+=parseInt(v);}document.getElementById('fs-out').style.display='block';document.getElementById('fs-val').textContent=s+'/9';const ve=document.getElementById('fs-vd');if(s>=8){ve.textContent='🏆 頂尖 強力買進';ve.style.color='var(--green)';}else if(s>=7){ve.textContent='✅ 健康 可考慮';ve.style.color='var(--green)';}else if(s>=5){ve.textContent='⚠️ 普通 需研究';ve.style.color='var(--warn)';}else{ve.textContent='❌ 警示 高風險';ve.style.color='var(--red)';}}
+
+// ── Altman ──────────────────────────────────────────
+function calcAltman(){const x1=v('z-x1'),x2=v('z-x2'),x3=v('z-x3'),x4=v('z-x4'),x5=v('z-x5');const c1=1.2*x1,c2=1.4*x2,c3=3.3*x3,c4=0.6*x4,c5=x5,z=c1+c2+c3+c4+c5;document.getElementById('z-ph').style.display='none';document.getElementById('z-out').style.display='block';const ze=document.getElementById('z-score');ze.textContent=f2(z);ze.style.color=z>2.99?'var(--green)':z>=1.81?'var(--warn)':'var(--red)';const zv=document.getElementById('z-vd');if(z>2.99){zv.textContent='✅ 安全';zv.style.color='var(--green)';}else if(z>=1.81){zv.textContent='⚠️ 灰色警戒';zv.style.color='var(--warn)';}else{zv.textContent='❌ 危險';zv.style.color='var(--red)';}['c1','c2','c3','c4','c5'].forEach((k,i)=>document.getElementById('z-'+k).textContent=f2([c1,c2,c3,c4,c5][i]));}
+
+// ── Screener ─────────────────────────────────────────
+let stocks=[];
+function addStock(){stocks.push({name:document.getElementById('s-name').value,pe:v('s-pe'),pb:v('s-pb'),ev:v('s-ev'),peg:v('s-peg'),roe:v('s-roe'),gpm:v('s-gpm'),npm:v('s-npm'),epsg:v('s-epsg'),cr:v('s-cr'),dr:v('s-dr'),yield:v('s-yield')});renderSList();}
+function renderSList(){document.getElementById('s-list').innerHTML=stocks.length===0?'':stocks.map((s,i)=>`<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border)"><span style="font-size:12px;font-family:'Space Mono',monospace">${s.name}</span><button onclick="stocks.splice(${i},1);renderSList()" style="background:rgba(184,64,64,.1);color:var(--red);border:1px solid rgba(184,64,64,.2);border-radius:4px;padding:2px 8px;cursor:pointer;font-size:11px">✕</button></div>`).join('');}
+function loadTmpl(){const t=document.getElementById('tmpl').value;const T={value:{pe:15,pb:1.5,peg:1,ev:10,roe:10,gpm:20,npm:8,epsg:5,cr:1.5,dr:40,yield:3,fs:7},growth:{pe:40,pb:10,peg:1.5,ev:25,roe:20,gpm:40,npm:15,epsg:20,cr:1.2,dr:60,yield:0,fs:6},dividend:{pe:20,pb:3,peg:2,ev:12,roe:12,gpm:25,npm:10,epsg:3,cr:1.5,dr:45,yield:4,fs:6},quality:{pe:30,pb:5,peg:1.5,ev:18,roe:20,gpm:45,npm:15,epsg:12,cr:2,dr:30,yield:1,fs:7},momentum:{pe:35,pb:6,peg:2,ev:20,roe:15,gpm:30,npm:10,epsg:15,cr:1.5,dr:50,yield:0,fs:5}};if(T[t]){const m=T[t];['pe','pb','peg','ev','roe','gpm','npm','epsg','cr','dr','yield','fs'].forEach(k=>{const el=document.getElementById('f-'+k);if(el)el.value=m[k]||'';});}}
+function runScreener(){const F={pe:v('f-pe'),pb:v('f-pb'),peg:v('f-peg'),ev:v('f-ev'),roe:v('f-roe'),gpm:v('f-gpm'),npm:v('f-npm'),epsg:v('f-epsg'),cr:v('f-cr'),dr:v('f-dr'),yield:v('f-yield')};document.getElementById('sc-sph').style.display='none';document.getElementById('sc-sout').style.display='block';if(!stocks.length){document.getElementById('sc-sout').innerHTML='<p style="text-align:center;padding:40px;color:var(--text3)">請先加入股票</p>';return;}const results=stocks.map(s=>{let pass=[],fail=[];const chk=(l,val,lim,isMax)=>(isMax?val<=lim:val>=lim)?pass.push(l):fail.push(l);chk('P/E≤'+F.pe,s.pe,F.pe,true);chk('P/B≤'+F.pb,s.pb,F.pb,true);chk('PEG≤'+F.peg,s.peg,F.peg,true);chk('ROE≥'+F.roe+'%',s.roe,F.roe,false);chk('毛利≥'+F.gpm+'%',s.gpm,F.gpm,false);chk('淨利≥'+F.npm+'%',s.npm,F.npm,false);chk('EPS成長≥'+F.epsg+'%',s.epsg,F.epsg,false);chk('流動≥'+F.cr,s.cr,F.cr,false);chk('負債≤'+F.dr+'%',s.dr,F.dr,true);chk('殖利≥'+F.yield+'%',s.yield,F.yield,false);return{...s,pass,fail,score:Math.round(pass.length/10*100)};}).sort((a,b)=>b.score-a.score);document.getElementById('sc-sout').innerHTML=results.map(r=>{const c=r.score>=80?'var(--green)':r.score>=60?'var(--warn)':'var(--red)';return`<div style="background:var(--bg);border:1px solid var(--border);border-left:3px solid ${c};border-radius:8px;padding:12px;margin-bottom:8px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span style="font-weight:700">${r.name}</span><span style="font-family:'Space Mono',monospace;color:${c};font-size:18px;font-weight:700">${r.score}%</span></div><div style="font-size:11px;color:var(--green)">✓ ${r.pass.join(' · ')}</div>${r.fail.length?`<div style="font-size:11px;color:var(--red)">✗ ${r.fail.join(' · ')}</div>`:''}</div>`;}).join('');}
+
+// ── Dashboard ────────────────────────────────────────
+let taiexInst=null, klineInst=null;
+const CHART_OPTS = {
+  responsive:true, maintainAspectRatio:false,
+  interaction:{mode:'index',intersect:false},
+  plugins:{legend:{labels:{color:'#7a5c42',font:{size:11}}},
+    tooltip:{backgroundColor:'#fdf8f2',titleColor:'#3b2a1a',bodyColor:'#7a5c42',borderColor:'#d9c9b4',borderWidth:1}},
+  scales:{x:{ticks:{color:'#b09878',maxTicksLimit:8,font:{size:10}},grid:{color:'rgba(122,79,46,0.07)'}},
+          y:{ticks:{color:'#b09878',font:{size:10}},grid:{color:'rgba(122,79,46,0.07)'}}}
+};
+
+function initDash(){loadTaiex();calcTop10();}
+
+async function loadTaiex(){
+  const canvas=document.getElementById('taiex-c'); if(!canvas) return;
+  try {
+    const months=getMonths(3);
+    let rows=[];
+    for(const ym of months){
+      const url=`https://www.twse.com.tw/rwd/zh/TAIEX/MI_5MINS_HIST?date=${ym}01&response=json`;
+      const d=await fetchAny(url);
+      if(d?.data) rows=rows.concat(d.data);
+    }
+    if(!rows.length) throw new Error('無大盤資料');
+    const last60=rows.slice(-60);
+    const labels=last60.map(r=>r[0]);
+    const closes=last60.map(r=>parseFloat(r[4]?.replace(/,/g,''))||null);
+    document.getElementById('ti-c').textContent=closes.at(-1)?.toFixed(2)||'—';
+    const chg=closes.at(-1)-closes.at(-2);
+    document.getElementById('ti-chg').textContent=(chg>=0?'+':'')+chg.toFixed(2);
+    document.getElementById('ti-chg').style.color=chg>=0?'var(--green)':'var(--red)';
+    document.getElementById('ti-pct').textContent=((chg/closes.at(-2))*100).toFixed(2)+'%';
+    if(taiexInst) taiexInst.destroy();
+    taiexInst=new Chart(canvas.getContext('2d'),{type:'line',
+      data:{labels,datasets:[{label:'加權指數',data:closes,borderColor:'rgba(122,79,46,1)',
+        backgroundColor:'rgba(122,79,46,0.08)',borderWidth:2,pointRadius:0,tension:.3,fill:true}]},
+      options:CHART_OPTS});
+  } catch(e){canvas.parentElement.innerHTML=`<p style="text-align:center;padding:60px;color:var(--text3)">⚠️ 大盤數據載入失敗<br><small>${e.message}</small></p>`;}
+}
+
+async function loadKline(){
+  const code=document.getElementById('kl-code').value.match(/\d{4}/)?.[0]; if(!code){alert('請輸入代碼');return;}
+  const canvas=document.getElementById('kline-c'); if(!canvas) return;
+  try {
+    const months=getMonths(3); let rows=[];
+    for(const ym of months){
+      const d=await fetchAny(`https://www.twse.com.tw/rwd/zh/stock/STOCK_DAY?stockNo=${code}&date=${ym}01&response=json`);
+      if(d?.data) rows=rows.concat(d.data);
+    }
+    if(!rows.length) throw new Error('查無資料');
+    const last60=rows.slice(-60);
+    // [日期,成交量,金額,開,高,低,收,漲跌,筆數]
+    const labels=last60.map(r=>r[0]);
+    const opens=last60.map(r=>parseFloat(r[3]?.replace(/,/g,''))||null);
+    const highs=last60.map(r=>parseFloat(r[4]?.replace(/,/g,''))||null);
+    const lows=last60.map(r=>parseFloat(r[5]?.replace(/,/g,''))||null);
+    const closes=last60.map(r=>parseFloat(r[6]?.replace(/,/g,''))||null);
+    const vols=last60.map(r=>parseInt(r[1]?.replace(/,/g,''))||0);
+    const ma5=calcMA(closes,5), ma20=calcMA(closes,20);
+    document.getElementById('ki-c').textContent='$'+closes.at(-1)?.toFixed(2);
+    document.getElementById('ki-ma5').textContent='$'+ma5.at(-1)?.toFixed(2);
+    document.getElementById('ki-ma20').textContent='$'+ma20.at(-1)?.toFixed(2);
+    document.getElementById('ki-vol').textContent=(vols.at(-1)/1000).toFixed(0)+'張';
+    document.getElementById('kl-name').textContent=DBS[code]?.name||'';
+    if(klineInst) klineInst.destroy();
+    klineInst=new Chart(canvas.getContext('2d'),{type:'bar',
+      data:{labels,datasets:[
+        {label:'收盤',data:closes,type:'line',borderColor:'rgba(122,79,46,.9)',backgroundColor:'transparent',borderWidth:1.5,pointRadius:0,yAxisID:'y',order:1},
+        {label:'MA5',data:ma5,type:'line',borderColor:'rgba(176,112,32,.9)',backgroundColor:'transparent',borderWidth:1.5,pointRadius:0,yAxisID:'y',order:2},
+        {label:'MA20',data:ma20,type:'line',borderColor:'rgba(74,122,74,.9)',backgroundColor:'transparent',borderWidth:1.5,pointRadius:0,yAxisID:'y',order:3},
+        {label:'量',data:vols.map(v=>v/1000),backgroundColor:closes.map((c,i)=>c>=(opens[i]||c)?'rgba(74,122,74,.25)':'rgba(184,64,64,.25)'),yAxisID:'y2',order:4}
+      ]},
+      options:{...CHART_OPTS,scales:{...CHART_OPTS.scales,y:{...CHART_OPTS.scales.y,position:'left'},y2:{position:'right',ticks:{color:'#b09878',font:{size:9}},grid:{display:false}}}}});
+  } catch(e){canvas.parentElement.innerHTML=`<p style="text-align:center;padding:60px;color:var(--text3)">⚠️ K線載入失敗<br><small>${e.message}</small></p>`;}
+}
+
+function calcTop10(){
+  if(!Object.keys(DBS).length){document.getElementById('top10-list').innerHTML='<p style="text-align:center;padding:40px;color:var(--text3)">請先載入資料庫</p>';return;}
+  const res=[];
+  for(const [code,d] of Object.entries(DBS)){
+    if(!d.close||d.close<=0) continue;
+    let vs=0,ps=0,ss=0,gs=0;
+    const pe=d.pe,pb=d.pb,dy=d.div_yield;
+    if(pe>0&&pe<12)vs+=20;else if(pe>0&&pe<18)vs+=12;else if(pe>0&&pe<25)vs+=6;
+    if(pb>0&&pb<1.2)vs+=10;else if(pb>0&&pb<2.5)vs+=6;else if(pb>0&&pb<4)vs+=2;
+    if(dy>5)vs+=10;else if(dy>3)vs+=6;else if(dy>2)vs+=3;
+    // 安全邊際（葛拉漢）
+    let fv=null;
+    if(d.eps&&d.eps>0){const g=d.eps_growth||5;fv=d.eps*(8.5+2*g)*4.4/3.5;const mos=(fv-d.close)/fv*100;if(mos>30)vs+=15;else if(mos>20)vs+=8;else if(mos>10)vs+=3;else if(mos<-25)vs-=5;}
+    if(d.roe>25)ps+=15;else if(d.roe>18)ps+=10;else if(d.roe>12)ps+=5;
+    if(d.gross_margin>55)ps+=10;else if(d.gross_margin>40)ps+=6;else if(d.gross_margin>25)ps+=2;
+    if(d.net_margin>25)ps+=10;else if(d.net_margin>15)ps+=6;else if(d.net_margin>8)ps+=2;
+    if(d.roic>20)ps+=5;else if(d.roic>12)ps+=3;
+    if(d.current_ratio>2)ss+=10;else if(d.current_ratio>1.5)ss+=6;else if(d.current_ratio>1)ss+=2;
+    if(d.debt_ratio<25)ss+=10;else if(d.debt_ratio<40)ss+=6;else if(d.debt_ratio<55)ss+=2;
+    if(d.interest_coverage>10)ss+=5;else if(d.interest_coverage>5)ss+=3;
+    if(d.eps_growth>25)gs+=5;else if(d.eps_growth>12)gs+=3;else if(d.eps_growth>0)gs+=1;
+    if(d.rev_growth>15)gs+=3;else if(d.rev_growth>5)gs+=1;
+    if(d.fcf>0)gs+=2;
+    const total=vs+ps+ss+gs;
+    if(!d.pe&&!d.pb) continue;
+    // 買賣目標
+    const bt={};
+    if(fv){bt.fair=fv.toFixed(1);bt.buy=(fv*.75).toFixed(1);bt.mos=((fv-d.close)/fv*100).toFixed(1);}
+    if(d.bps&&d.bps>0){bt.sup=(d.bps*1.5).toFixed(1);}
+    bt.tp1=(d.close*1.15).toFixed(1); bt.tp2=(d.close*1.25).toFixed(1);
+    res.push({code,d,total,vs,ps,ss,gs,bt});
+  }
+  res.sort((a,b)=>b.total-a.total);
+  const top10=res.slice(0,10);
+  document.getElementById('top10-list').innerHTML=
+    `<div class="top10-grid">`+top10.map((item,idx)=>{
+      const {code,d,total,vs,ps,ss,gs,bt}=item;
+      const sigs=[];
+      if(d.pe>0&&d.pe<15) sigs.push(['低P/E','sig-b']);
+      if(d.roe>18) sigs.push(['高ROE','sig-b']);
+      if(d.div_yield>4) sigs.push(['高殖利率','sig-b']);
+      if(bt.mos>20) sigs.push([`低估${bt.mos}%`,'sig-b']);
+      if(d.current_ratio&&d.current_ratio<1) sigs.push(['流動性警示','sig-c']);
+      if(d.debt_ratio>60) sigs.push(['高負債','sig-c']);
+      return `<div class="sc" onclick="loadStockCard('${code}')">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+          <div>
+            <div style="font-weight:700;font-size:13px">${d.name||code}</div>
+            <div style="font-family:'Space Mono',monospace;font-size:11px;color:var(--text2)">${code} · $${d.close?.toFixed(2)}</div>
+          </div>
+          <div style="text-align:right">
+            <div style="font-family:'Space Mono',monospace;font-size:24px;font-weight:800;color:var(--accent)">${total}</div>
+            <div style="font-size:9px;color:var(--text3)">#${idx+1}</div>
+          </div>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text3);margin-bottom:3px">
+          <span>估${vs}</span><span>獲${ps}</span><span>安${ss}</span><span>成${gs}</span>
+        </div>
+        <div class="sbar-bg"><div class="sbar" style="width:${Math.min(total,100)}%"></div></div>
+        <div class="ptbox">
+          <div style="font-size:10px;color:var(--text3);margin-bottom:5px">📍 買賣建議</div>
+          ${bt.buy?`<div style="display:flex;justify-content:space-between;font-size:11px;padding:2px 0"><span style="color:var(--text2)">🟢 建議買入</span><span style="font-family:'Space Mono',monospace;color:var(--green);font-weight:700">≤ $${bt.buy}</span></div>`:''}
+          ${bt.fair?`<div style="display:flex;justify-content:space-between;font-size:11px;padding:2px 0"><span style="color:var(--text2)">⚖️ 合理價</span><span style="font-family:'Space Mono',monospace">$${bt.fair}</span></div>`:''}
+          ${bt.sup?`<div style="display:flex;justify-content:space-between;font-size:11px;padding:2px 0"><span style="color:var(--text2)">🔵 P/B支撐</span><span style="font-family:'Space Mono',monospace">$${bt.sup}</span></div>`:''}
+          <div style="display:flex;justify-content:space-between;font-size:11px;padding:2px 0"><span style="color:var(--text2)">🔴 停利區</span><span style="font-family:'Space Mono',monospace;color:var(--red)">$${bt.tp1}–${bt.tp2}</span></div>
+        </div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:7px">${sigs.map(([t,c])=>`<span class="sig ${c}">${t}</span>`).join('')}</div>
+      </div>`;
+    }).join('')+'</div>';
+}
+
+function loadStockCard(code){
+  loadStock(code);
+  const dcfBtn=document.querySelector('[onclick*="dcf"]');
+  if(dcfBtn) goPage('dcf',dcfBtn);
+}
+
+function calcMA(arr,n){return arr.map((_,i)=>{if(i<n-1)return null;const s=arr.slice(i-n+1,i+1).filter(v=>v!=null);return s.length===n?s.reduce((a,b)=>a+b,0)/n:null;});}
+function getMonths(n){const m=[],now=new Date();for(let i=n-1;i>=0;i--){const d=new Date(now.getFullYear(),now.getMonth()-i,1);m.push(`${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}`);}return m;}
+async function fetchAny(url){const proxies=[url,`https://corsproxy.io/?${encodeURIComponent(url)}`];for(const u of proxies){try{const r=await fetch(u,{signal:AbortSignal.timeout(8000)});if(!r.ok)continue;return await r.json();}catch{}}return null;}
+</script>
+</body>
+</html>
