@@ -2,9 +2,8 @@ name: 每日股票數據更新 + 部署
 
 on:
   schedule:
-    # 台灣時間 14:30（UTC+8），所以 UTC 06:30
     - cron: '30 6 * * 1-5'
-  workflow_dispatch:  # 允許手動觸發
+  workflow_dispatch:
     inputs:
       full_fetch:
         description: '完整季度抓取（含FinMind財務資料）'
@@ -16,6 +15,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      pages: write
+      id-token: write
 
     steps:
       - name: Checkout
@@ -25,7 +26,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-          cache: 'pip'
 
       - name: Install dependencies
         run: pip install requests
@@ -39,25 +39,22 @@ jobs:
             --token "$FINMIND_TOKEN" \
             $([ "$FULL_FETCH" = "true" ] && echo "--full" || echo "")
 
-      - name: 確認輸出檔案
-        run: |
-          echo "=== stock_data.js 大小 ==="
-          wc -c data/stock_data.js
-          echo "=== 前 200 字元 ==="
-          head -c 200 data/stock_data.js
-
       - name: Commit 數據更新
         run: |
-          git config user.name  "GitHub Actions Bot"
+          git config user.name "GitHub Actions Bot"
           git config user.email "actions@github.com"
           git add data/stock_data.js data/fetch_log.txt
           git diff --cached --quiet || \
             git commit -m "📊 $(date '+%Y-%m-%d %H:%M') 自動更新股市數據"
           git push
 
-      - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v4
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./
-          exclude_assets: '.github,scripts,README.md'
+          path: '.'
+
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v4
